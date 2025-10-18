@@ -1,0 +1,12 @@
+{
+	"authors": [
+		"Aidan"
+	],
+	"copyright": "TM",
+	"dependencies": {
+		"bindbc-sdl": "~>2.2.2"
+	},
+	"description": "A graphics engine written in D",
+	"license": "CC-BY-4.0",
+	"name": "sdl_gpu_project"
+}
