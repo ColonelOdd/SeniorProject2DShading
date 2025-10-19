@@ -10,6 +10,11 @@ struct Vertex
     float r, g, b, a;   //vec4 color
 };
 
+struct Triangle 
+{
+    Vertex[3] triangle_vertices;      //3 vec3 
+};
+
 // // a list of vertices
 // static Vertex vertices[]
 // {
@@ -17,6 +22,64 @@ struct Vertex
 //     {-0.5f, -0.5f, 0.0f, 1.0f, 1.0f, 0.0f, 1.0f},   // bottom left vertex
 //     {0.5f, -0.5f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f}     // bottom right vertex
 // };
+
+struct Mesh{
+    Vertex[] points;
+    size_t num_triangles;
+}
+
+/// Setup triangle with OpenGL buffers
+Mesh LoadSTLFile(string mesh){
+    Mesh m;
+    // Geometry Data
+    Vertex[] mVertexData =
+        [];
+    // Load and parse an STL file.
+    import std.string;
+    // Split it up line by line
+    string[] lines = splitLines(mesh);
+    string mCase = "facet";
+    int counter = 0;
+    import std.algorithm;
+    import std.format;
+    float[3] color;
+    foreach(line; lines)
+    {
+        // Scanf for coordinates if line starts with facet normal
+        switch (mCase){
+            case "facet":
+                if (startsWith(line.strip(), "facet normal"))
+                {
+                    line.strip().formattedRead("facet normal %f %f %f", color[0], color[1], color[2]);
+                    mCase = "vertex";
+                }
+                break;
+            case "vertex":
+                if (startsWith(line.strip(), "vertex"))
+                {
+                    float[3] vertex;
+                    line.strip().formattedRead("vertex %f %f %f", vertex[0], vertex[1], vertex[2]);
+                    mVertexData ~= Vertex(x: vertex[0], y: vertex[1], z: vertex[2], r: color[0], g: color[1], b: color[2], a: 1.0f);
+                    counter++;
+                }
+
+                if (counter == 3)
+                {
+                    counter = 0;
+                    mCase = "facet";
+                }
+                break;
+            default:
+                break;
+        }
+        // Each triangle will have one color? On paper?
+        
+    }
+    m.points = mVertexData;
+    m.num_triangles = m.points.length / 3;
+
+    return m;
+}
 
 
 struct GraphicsApp{
@@ -34,19 +97,33 @@ struct GraphicsApp{
     Vertex[] vertices = 
         [Vertex(x: 0.0f, y: 0.5f, z: 0.0f, r: 1.0f, g: 0.0f, b: 0.0f, a: 1.0f),     // top vertex
         Vertex(x: -0.5f, y: -0.5f, z: 0.0f, r: 1.0f, g: 1.0f, b: 0.0f, a: 1.0f),   // bottom left vertex
-        Vertex(x: 0.5f, y: -0.5f, z: 0.0f, r: 1.0f, g: 0.0f, b: 1.0f, a: 1.0f)];     // bottom right vertex
+        Vertex(x: 0.5f, y: -0.5f, z: 0.0f, r: 1.0f, g: 0.0f, b: 1.0f, a: 1.0f),
+        
+        Vertex(x: -0.8f, y: 0.8f, z: 0.0f, r: 0.0f, g: 1.0f, b: 0.0f, a: 1.0f),
+        Vertex(x: -0.3f, y: 0.8f, z: 0.0f, r: 0.0f, g: 0.0f, b: 1.0f, a: 1.0f),
+        Vertex(x: -0.55f, y: 0.3f, z: 0.0f, r: 1.0f, g: 1.0f, b: 1.0f, a: 1.0f), 
+        
+        Vertex(x: 0.8f, y: 0.8f, z: 0.0f, r: 0.0f, g: 1.0f, b: 0.0f, a: 1.0f),
+        Vertex(x: 0.3f, y: 0.8f, z: 0.0f, r: 0.0f, g: 0.0f, b: 1.0f, a: 1.0f),
+        Vertex(x: 0.55f, y: 0.3f, z: 0.0f, r: 1.0f, g: 1.0f, b: 1.0f, a: 1.0f)];     // bottom right vertex
     
 
     int mScreenWidth = 640;
     int mScreenHeight = 480;
 
     /// Setup OpenGL and any libraries
-    this(int width, int height){
+    this(int width, int height, string mesh){
         mScreenWidth = width;
         mScreenHeight = height;
+        
+        import std.file;
+        import std.conv;
+        const bytes = read(mesh);
+        const file_string = cast(string) bytes;
+        vertices = LoadSTLFile(file_string).points;
 
         // Create an application window using SDL
-        mWindow = SDL_CreateWindow("Hello, Triangle!", mScreenWidth, mScreenHeight, SDL_WINDOW_RESIZABLE);
+        mWindow = SDL_CreateWindow("Senior Project", mScreenWidth, mScreenHeight, SDL_WINDOW_RESIZABLE);
 
         // GPU device
         mGPUDevice = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV, false, null);
@@ -325,7 +402,7 @@ struct GraphicsApp{
         
 
         // issue a draw call
-        SDL_DrawGPUPrimitives(renderPass, 3, 1, 0, 0);
+        SDL_DrawGPUPrimitives(renderPass, cast(uint) vertices.length, 1, 0, 0);
 
         // end the render pass
         SDL_EndGPURenderPass(renderPass);

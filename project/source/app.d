@@ -9,7 +9,7 @@ void main(){
 	
 	//etc.
 	// Create graphics app!
-	GraphicsApp app = GraphicsApp(960,540);
+	GraphicsApp app = GraphicsApp(960,540, "bunny_centered.stl");
     app.Loop();
 }
 // SDL_Window* window;
