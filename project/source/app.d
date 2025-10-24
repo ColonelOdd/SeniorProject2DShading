@@ -9,7 +9,7 @@ void main(){
 	
 	//etc.
 	// Create graphics app!
-	GraphicsApp app = GraphicsApp(960,540, "bunny_centered.stl");
+	GraphicsApp app = GraphicsApp(960,540, "assets/windmill/windmill.obj");
     app.Loop();
 }
 // SDL_Window* window;
