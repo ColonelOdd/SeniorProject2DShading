@@ -3,6 +3,10 @@ import sdl_abstraction;
 import bindbc.sdl;
 import std.stdint;
 
+// got to put 
+import camera;
+import linear;
+
 // the vertex input layout
 struct Vertex
 {
@@ -241,7 +245,7 @@ struct PPM{
 				int counter=0;
 				bool foundMagicNumber = false;
 				bool foundDimensions  = false;
-				bool foundRange			  = false;
+				bool foundRange	= false;
 				foreach(line ; f.byLine()){
 						if(line.startsWith("#")){
 							continue;
@@ -304,7 +308,12 @@ struct PPM{
 
 }
 
-
+struct UniformBuffer
+{
+    mat4 uModel;
+    mat4 uView;
+    mat4 uProjection;
+};
 
 struct GraphicsApp{
     // Essential
@@ -320,6 +329,10 @@ struct GraphicsApp{
 
     // Pipeline
     SDL_GPUGraphicsPipeline* mGraphicsPipeline;
+
+    // Abstract mCamera defined
+    Camera mCamera;
+    UniformBuffer cameraUniform;
 
     Vertex[] vertices = [];
         // [Vertex(x: 0.0f, y: 0.5f, z: 0.0f, r: 1.0f, g: 0.0f, b: 0.0f, a: 1.0f),     // top vertex
@@ -366,6 +379,10 @@ struct GraphicsApp{
             writeln("Error in creation of GPU device");
             mGameIsRunning= SDL_APP_FAILURE;
         }
+
+        // Create a camera
+		mCamera = new Camera();
+
         // load the vertex shader code
         size_t vertexCodeSize; 
         void* vertexCode = SDL_LoadFile("pipelines/texture/vertex.spv", &vertexCodeSize);
@@ -387,7 +404,7 @@ struct GraphicsApp{
         vertexInfo.num_samplers = 0;
         vertexInfo.num_storage_buffers = 0;
         vertexInfo.num_storage_textures = 0;
-        vertexInfo.num_uniform_buffers = 0;
+        vertexInfo.num_uniform_buffers = 3;
 
         SDL_GPUShader* mVertexShader = SDL_CreateGPUShader(mGPUDevice, &vertexInfo);
 
@@ -641,8 +658,42 @@ struct GraphicsApp{
                     writeln("Pressed escape key and now exiting...");
                     mGameIsRunning= SDL_APP_SUCCESS;
                 }
+                else if(event.key.scancode == SDL_SCANCODE_DOWN){
+                    writeln("Down!");
+                    mCamera.MoveBackward();
+                }
+                else if(event.key.scancode == SDL_SCANCODE_UP){
+                    writeln("Up!");
+                    mCamera.MoveForward();
+                }
+                else if(event.key.scancode == SDL_SCANCODE_LEFT){
+                    writeln("Left!");
+                    mCamera.MoveLeft();
+                }
+                else if(event.key.scancode== SDL_SCANCODE_RIGHT){
+                    writeln("Right!");
+                    mCamera.MoveRight();
+                }
+                else if(event.key.scancode == SDL_SCANCODE_A){
+                    writeln("Ascend!");
+                    mCamera.MoveUp();
+                }
+                else if(event.key.scancode == SDL_SCANCODE_Z){
+                    writeln("Descend!");
+                    mCamera.MoveDown();
+                }
+                else if(event.key.scancode == SDL_SCANCODE_SPACE){
+                    writeln("|| DEBUGGING... ||");
+                    writeln(mCamera.mEyePosition);
+                    writeln(mCamera.mViewMatrix);
+                    writeln(cameraUniform.uView);
+                }
             }
         }
+        // Retrieve the mouse position
+        float mouseX,mouseY;
+        SDL_GetMouseState(&mouseX,&mouseY);
+        mCamera.MouseLook(mouseX,mouseY);
     }
 
 
@@ -658,6 +709,12 @@ struct GraphicsApp{
         SDL_GPUTexture* swapchainTexture;
         uint width, height;
         SDL_WaitAndAcquireGPUSwapchainTexture(commandBuffer, mWindow, &swapchainTexture, &width, &height);
+
+        // add camera buffers
+        cameraUniform.uModel = mCamera.mModelMatrix;
+        cameraUniform.uView = mCamera.mViewMatrix;
+        cameraUniform.uProjection = mCamera.mProjectionMatrix;
+        SDL_PushGPUVertexUniformData(commandBuffer, 0, &cameraUniform, cameraUniform.sizeof);
 
         // draw something
         SDL_GPUCopyPass* copyPass = SDL_BeginGPUCopyPass(commandBuffer);
