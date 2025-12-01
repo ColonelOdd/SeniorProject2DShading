@@ -315,6 +315,31 @@ struct UniformBuffer
     mat4 uProjection;
 };
 
+// clean up, from SDL GPU by example
+SDL_GPUTextureFormat GetSupportedDepthFormat(SDL_GPUDevice* mGPUDevice)
+{
+  SDL_GPUTextureFormat[] possibleFormats = [
+    SDL_GPU_TEXTUREFORMAT_D32_FLOAT_S8_UINT,
+    SDL_GPU_TEXTUREFORMAT_D24_UNORM_S8_UINT,
+    SDL_GPU_TEXTUREFORMAT_D32_FLOAT,
+    SDL_GPU_TEXTUREFORMAT_D24_UNORM,
+    SDL_GPU_TEXTUREFORMAT_D16_UNORM,
+  ];
+
+  for (size_t i = 0; i < possibleFormats.length; ++i) {
+    if (SDL_GPUTextureSupportsFormat(mGPUDevice,
+      possibleFormats[i],
+      SDL_GPU_TEXTURETYPE_2D,
+      SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET))
+    {
+      return possibleFormats[i];
+    }
+  }
+
+  return SDL_GPU_TEXTUREFORMAT_INVALID;
+}
+
+
 struct GraphicsApp{
     // Essential
     SDL_AppResult mGameIsRunning= SDL_APP_CONTINUE;
@@ -333,6 +358,12 @@ struct GraphicsApp{
     // Abstract mCamera defined
     Camera mCamera;
     UniformBuffer cameraUniform;
+
+    // Depth Texture info
+    SDL_GPUTexture* depthTexture = null;
+    SDL_GPUTextureFormat depthFormat;
+    uint depthWidth = 0;
+    uint depthHeight = 0;
 
     Vertex[] vertices = [];
         // [Vertex(x: 0.0f, y: 0.5f, z: 0.0f, r: 1.0f, g: 0.0f, b: 0.0f, a: 1.0f),     // top vertex
@@ -404,7 +435,7 @@ struct GraphicsApp{
         vertexInfo.num_samplers = 0;
         vertexInfo.num_storage_buffers = 0;
         vertexInfo.num_storage_textures = 0;
-        vertexInfo.num_uniform_buffers = 3;
+        vertexInfo.num_uniform_buffers = 1;
 
         SDL_GPUShader* mVertexShader = SDL_CreateGPUShader(mGPUDevice, &vertexInfo);
 
@@ -526,6 +557,19 @@ struct GraphicsApp{
         pipelineInfo.target_info.num_color_targets = 1;
         pipelineInfo.target_info.color_target_descriptions = colorTargetDescriptions.ptr;
 
+        // Depth Buffer Addition
+        depthFormat = GetSupportedDepthFormat(mGPUDevice);
+        pipelineInfo.target_info.depth_stencil_format = depthFormat;
+        pipelineInfo.target_info.has_depth_stencil_target = true;
+        pipelineInfo.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
+        pipelineInfo.rasterizer_state.front_face = SDL_GPU_FRONTFACE_CLOCKWISE;
+        pipelineInfo.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_NONE;
+
+        pipelineInfo.depth_stencil_state.compare_op = SDL_GPU_COMPAREOP_LESS_OR_EQUAL;
+
+        pipelineInfo.depth_stencil_state.enable_depth_test = true;
+        pipelineInfo.depth_stencil_state.enable_depth_write = true;
+
         // create the pipeline
         mGraphicsPipeline = SDL_CreateGPUGraphicsPipeline(mGPUDevice, &pipelineInfo);
         if (mGraphicsPipeline == null)
@@ -580,9 +624,9 @@ struct GraphicsApp{
         SDL_GPUSamplerCreateInfo  samplerInfo = SDL_GPUSamplerCreateInfo(min_filter : SDL_GPU_FILTER_NEAREST,
             mag_filter : SDL_GPU_FILTER_NEAREST,
             mipmap_mode : SDL_GPU_SAMPLERMIPMAPMODE_NEAREST,
-            address_mode_u : SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
-            address_mode_v : SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
-            address_mode_w : SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE);
+            address_mode_u : SDL_GPU_SAMPLERADDRESSMODE_REPEAT,
+            address_mode_v : SDL_GPU_SAMPLERADDRESSMODE_REPEAT,
+            address_mode_w : SDL_GPU_SAMPLERADDRESSMODE_REPEAT);
         mSampler = SDL_CreateGPUSampler(mGPUDevice, &samplerInfo);
 
         // Get a command buffer to upload the texture
@@ -684,9 +728,16 @@ struct GraphicsApp{
                 }
                 else if(event.key.scancode == SDL_SCANCODE_SPACE){
                     writeln("|| DEBUGGING... ||");
+                    writeln("Eye");
                     writeln(mCamera.mEyePosition);
+                    writeln("View Matrix");
                     writeln(mCamera.mViewMatrix);
+                    writeln("View Matrix for (GPU)");
                     writeln(cameraUniform.uView);
+                    writeln("Projection Matrix");
+                    writeln(mCamera.mProjectionMatrix);
+                    writeln("Projection Matrix for (GPU)");
+                    writeln(cameraUniform.uProjection);
                 }
             }
         }
@@ -743,15 +794,46 @@ struct GraphicsApp{
             SDL_SubmitGPUCommandBuffer(commandBuffer);
         }
         
+        // retrieve depthtexture 
+        if (depthWidth != width || depthHeight != height)
+        {
+            if (depthTexture != null)
+            {
+                SDL_ReleaseGPUTexture(mGPUDevice, depthTexture);
+            }
+            SDL_GPUTextureCreateInfo depthTextureInfo = SDL_GPUTextureCreateInfo(type : SDL_GPU_TEXTURETYPE_2D,
+                format : depthFormat,
+                width : width,
+                height : height,
+                layer_count_or_depth : 1,
+                num_levels : 1,
+                usage : SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET);
+            
+            depthTexture = SDL_CreateGPUTexture(mGPUDevice, &depthTextureInfo);
+            depthWidth = width;
+            depthHeight = height;
+        }
+        
         // Create the color target
         SDL_GPUColorTargetInfo colorTargetInfo = SDL_GPUColorTargetInfo.init;
         colorTargetInfo.clear_color = SDL_FColor(r: 245/255.0f, g: 135/255.0f, b: 66/255.0f, a: 255/255.0f);
         colorTargetInfo.load_op = SDL_GPU_LOADOP_CLEAR;
         colorTargetInfo.store_op = SDL_GPU_STOREOP_STORE;
         colorTargetInfo.texture = swapchainTexture;
+        
+        // Depth buffer
+        SDL_GPUDepthStencilTargetInfo depthStencilTargetInfo = SDL_GPUDepthStencilTargetInfo.init;
+        depthStencilTargetInfo.texture = depthTexture;
+        depthStencilTargetInfo.clear_depth = 1.0f;
+        depthStencilTargetInfo.clear_stencil = 0;
+        depthStencilTargetInfo.load_op = SDL_GPU_LOADOP_CLEAR;
+        depthStencilTargetInfo.store_op = SDL_GPU_STOREOP_DONT_CARE;
+        depthStencilTargetInfo.stencil_load_op = SDL_GPU_LOADOP_CLEAR;
+        depthStencilTargetInfo.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
+        depthStencilTargetInfo.cycle = true;
 
         // begin a render pass
-        SDL_GPURenderPass* renderPass = SDL_BeginGPURenderPass(commandBuffer, &colorTargetInfo, 1, null);
+        SDL_GPURenderPass* renderPass = SDL_BeginGPURenderPass(commandBuffer, &colorTargetInfo, 1, &depthStencilTargetInfo);
 
         // bind the graphics pipeline
         SDL_BindGPUGraphicsPipeline(renderPass, mGraphicsPipeline);
