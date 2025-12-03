@@ -1,0 +1,22 @@
+# Blender 3.4.1 MTL File: 'Norn.blend'
+# www.blender.org
+
+newmtl M_20_MD0_dev022_base01
+Ns 250.000000
+Ka 0.100000 0.100000 0.100000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 3
+map_Kd T_dev022_main_D.png
+
+newmtl M_30_MD0_dev022_clock
+Ns 250.000000
+Ka 0.100000 0.100000 0.100000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 3
+map_Kd T_dev022_main_D.png

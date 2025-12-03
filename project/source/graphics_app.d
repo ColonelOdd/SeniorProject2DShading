@@ -12,6 +12,7 @@ struct Vertex
 {
     float x, y, z;      //vec3 position
     float u, v;   //vec2 texture coordinates
+    float nx, ny, nz; // vec3 normal
 };
 
 struct Triangle 
@@ -30,6 +31,7 @@ struct Triangle
 struct Mesh{
     Vertex[] points;
     string bmp_file_path;
+    string norm_file_path;
     size_t num_triangles;
 }
 
@@ -104,6 +106,7 @@ Mesh MakeOBJ(string filepath){
     float[] mNormalData = [];
     uint[] mIndexData = [];
     uint[] mIndexTextureData = [];
+    uint[] mIndexNormalData = [];
     // Mesh announcement
     string str_mtl_file;
     foreach(line; lines)
@@ -147,18 +150,26 @@ Mesh MakeOBJ(string filepath){
                 int t = to!int(m.captures[2]);
                 int n = to!int(m.captures[3]);
                 mIndexData ~= p - 1;
+                mIndexNormalData ~= n - 1;
                 mIndexTextureData ~= t - 1;
             }
         }
     }
     Mesh m;
     // Geometry Data
+    writeln("Vertex indices: ", mTextureData.length);
+    writeln("Vertex indices: ", mIndexData.length);
+    writeln("Texture indices: ", mIndexTextureData.length);  
+    writeln("Normal indices: ", mIndexNormalData.length);
     Vertex[] mMultiVertex = [];
     for(size_t i=0; i < mIndexData.length; i++){
         // fill the buffer
         uint index = mIndexData[i];
         uint textureindex = mIndexTextureData[i];
-        mMultiVertex ~= Vertex(x: mVertexData[index * 3], y: mVertexData[index * 3 + 1], z: mVertexData[index * 3 + 2], u: mTextureData[textureindex * 2], v: mTextureData[textureindex * 2 + 1]);
+        uint normalindex = mIndexNormalData[i]; 
+        mMultiVertex ~= Vertex(x: mVertexData[index * 3], y: mVertexData[index * 3 + 1], z: mVertexData[index * 3 + 2], 
+                        u: mTextureData[textureindex * 2], v: mTextureData[textureindex * 2 + 1], 
+                        nx: mNormalData[normalindex * 3], ny: mNormalData[normalindex * 3 + 1], nz: mNormalData[normalindex * 3 + 2]);
     }
 
     // Return constructed mesh
@@ -166,14 +177,15 @@ Mesh MakeOBJ(string filepath){
     import std.format;
     auto lastSlash = filepath.lastIndexOf('/');
     string directoryPath = filepath[0 .. lastSlash + 1];
-
-    m.bmp_file_path = MTL_reader(directoryPath ~ str_mtl_file);
+    string[] paths = MTL_reader(directoryPath ~ str_mtl_file);
+    m.bmp_file_path = paths[0];
+    m.norm_file_path = paths[1];
     m.points = mMultiVertex;
     m.num_triangles = m.points.length / 3;
     return m;
 }
 
-string MTL_reader(string filepath){
+string[] MTL_reader(string filepath){
     // You can erase all of this code, or otherwise add the parsing of your OBJ
     // file here.
     // Load and parse an STL file.
@@ -193,18 +205,26 @@ string MTL_reader(string filepath){
     // Grab the directory 
     auto lastSlash = filepath.lastIndexOf('/');
     string directoryPath = filepath[0 .. lastSlash + 1];
-
+    string normalPath = directoryPath;
+    bool found_mtl = false;
     foreach(line; lines)
     {
-        if (startsWith(line.strip(), "map_Kd "))
+        if (startsWith(line.strip(), "map_Kd ") && !found_mtl)
         {
             line.strip().formattedRead("map_Kd %s", mtl);
             directoryPath ~= mtl;
+            found_mtl = true;
+        }
+        else if (startsWith(line.strip(), "map_Bump "))
+        {
+            line.strip().formattedRead("map_Bump %s", mtl);
+            normalPath ~= mtl;
         }
     }
     import std.stdio;
     writeln(directoryPath);
-    return directoryPath;
+    writeln(normalPath);
+    return [directoryPath, normalPath];
 }
 
 
@@ -315,6 +335,14 @@ struct UniformBuffer
     mat4 uProjection;
 };
 
+align(16) struct Light{
+	float[4] mColor=[1.0,1.0,1.0, 0.0];
+	float[4] mPosition=[0.1,0.1,0.1, 0.0];
+	float 	 mAmbientIntensity=1.5f;
+	float 	 mSpecularIntensity=0.2f;
+	float 	 mSpecularExponent=32.0f;
+}
+
 // clean up, from SDL GPU by example
 SDL_GPUTextureFormat GetSupportedDepthFormat(SDL_GPUDevice* mGPUDevice)
 {
@@ -351,6 +379,9 @@ struct GraphicsApp{
     // Texture Mode
     SDL_GPUTexture* mTexture;
     SDL_GPUSampler* mSampler;
+    // Normal Mode
+    SDL_GPUTexture* mNormal;
+    SDL_GPUSampler* mSamplerNormal;
 
     // Pipeline
     SDL_GPUGraphicsPipeline* mGraphicsPipeline;
@@ -358,6 +389,9 @@ struct GraphicsApp{
     // Abstract mCamera defined
     Camera mCamera;
     UniformBuffer cameraUniform;
+
+    // Light
+    Light mLight;
 
     // Depth Texture info
     SDL_GPUTexture* depthTexture = null;
@@ -416,7 +450,7 @@ struct GraphicsApp{
 
         // load the vertex shader code
         size_t vertexCodeSize; 
-        void* vertexCode = SDL_LoadFile("pipelines/texture/vertex.spv", &vertexCodeSize);
+        void* vertexCode = SDL_LoadFile("pipelines/normal/vertex.spv", &vertexCodeSize);
         //debugging
         if (vertexCode == null)
         {
@@ -452,7 +486,7 @@ struct GraphicsApp{
 
         // load the fragment shader code
         size_t fragmentCodeSize; 
-        void* fragmentCode = SDL_LoadFile("pipelines/texture/fragment.spv", &fragmentCodeSize);
+        void* fragmentCode = SDL_LoadFile("pipelines/normal/fragment.spv", &fragmentCodeSize);
         if (fragmentCode == null)
         {
             writeln("ERROR: Failed to load frag shader file!");
@@ -470,7 +504,7 @@ struct GraphicsApp{
         fragmentInfo.num_samplers = 1;
         fragmentInfo.num_storage_buffers = 0;
         fragmentInfo.num_storage_textures = 0;
-        fragmentInfo.num_uniform_buffers = 0;
+        fragmentInfo.num_uniform_buffers = 1;
 
         SDL_GPUShader* mFragShader = SDL_CreateGPUShader(mGPUDevice, &fragmentInfo);
         // debugging
@@ -523,7 +557,7 @@ struct GraphicsApp{
         pipelineInfo.vertex_input_state.vertex_buffer_descriptions = vertexBufferDesctiptions.ptr;
 
         // describe the vertex attribute
-        SDL_GPUVertexAttribute[2] vertexAttributes;
+        SDL_GPUVertexAttribute[3] vertexAttributes;
 
         // a_position
         vertexAttributes[0] = SDL_GPUVertexAttribute.init;
@@ -539,7 +573,14 @@ struct GraphicsApp{
         vertexAttributes[1].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2; //vec2
         vertexAttributes[1].offset = float.sizeof * 3; // 4th float from current buffer position
 
-        pipelineInfo.vertex_input_state.num_vertex_attributes = 2;
+        // a_normal
+        vertexAttributes[2] = SDL_GPUVertexAttribute.init;
+        vertexAttributes[2].buffer_slot = 0; // fetch data from the buffer at slot 0
+        vertexAttributes[2].location = 2; // layout (location = 0) in shader
+        vertexAttributes[2].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3; //vec3
+        vertexAttributes[2].offset = float.sizeof * 5; // start from the first byte from current buffer position
+
+        pipelineInfo.vertex_input_state.num_vertex_attributes = 3;
         pipelineInfo.vertex_input_state.vertex_attributes = vertexAttributes.ptr;
 
         // describe the color target
@@ -592,12 +633,12 @@ struct GraphicsApp{
         PPM surface = PPM.init;
         surface.LoadPPMImage(m.bmp_file_path);
         //surface.ConvertRGBtoRGBA();
-        ubyte[] testPixels = [
-            255, 0, 0, 255,    // Red
-            0, 255, 0, 255,    // Green
-            0, 0, 255, 255,    // Blue
-            255, 255, 0, 255   // Yellow
-        ];
+        // ubyte[] testPixels = [
+        //     255, 0, 0, 255,    // Red
+        //     0, 255, 0, 255,    // Green
+        //     0, 0, 255, 255,    // Blue
+        //     255, 255, 0, 255   // Yellow
+        // ];
 
         // Create texture data
         SDL_GPUTextureCreateInfo  textureInfo = SDL_GPUTextureCreateInfo(type : SDL_GPU_TEXTURETYPE_2D,
@@ -652,7 +693,52 @@ struct GraphicsApp{
         // Upload the texture
         SDL_UploadToGPUTexture(texCopyPass, &TexTransferInfo, &textureRegion, false);
 
+        // Norm Setup time
+        // PPM bump_map = PPM.init;
+        // bump_map.LoadPPMImage(m.norm_file_path);
 
+        // // Norm
+        // SDL_GPUTextureCreateInfo  normalInfo = SDL_GPUTextureCreateInfo(type : SDL_GPU_TEXTURETYPE_2D,
+        //     format : SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM,
+        //     width : bump_map.mWidth,
+        //     height : bump_map.mHeight,
+        //     layer_count_or_depth : 1,
+        //     num_levels : 1,
+        //     usage : SDL_GPU_TEXTUREUSAGE_SAMPLER);
+        // mNormal = SDL_CreateGPUTexture(mGPUDevice, &normalInfo);
+        
+        // // Upload texture data via transfer buffer
+        // SDL_GPUTransferBufferCreateInfo normTransferInfo = SDL_GPUTransferBufferCreateInfo.init;
+        // normTransferInfo.size = bump_map.mWidth * bump_map.mHeight * 4; // RGBA
+        // normTransferInfo.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+        // SDL_GPUTransferBuffer* mNormTransferBuffer  = SDL_CreateGPUTransferBuffer(mGPUDevice, &normTransferInfo);
+
+        // // Copy surface data to transfer buffer
+        // void* normData = SDL_MapGPUTransferBuffer(mGPUDevice, mNormTransferBuffer, false);
+        // SDL_memcpy(normData, cast(void*) bump_map.mPixels, bump_map.mWidth * bump_map.mHeight * 4);
+        // SDL_UnmapGPUTransferBuffer(mGPUDevice, mNormTransferBuffer);
+
+        // // Create sampler 
+        // mSamplerNormal = SDL_CreateGPUSampler(mGPUDevice, &samplerInfo);
+
+        // // Set up the texture upload
+        // SDL_GPUTextureTransferInfo NormTransferInfo = SDL_GPUTextureTransferInfo.init;
+        // NormTransferInfo.transfer_buffer = mNormTransferBuffer;
+        // NormTransferInfo.offset = 0;
+        // NormTransferInfo.pixels_per_row = bump_map.mWidth;  
+        // NormTransferInfo.rows_per_layer = bump_map.mHeight; 
+
+        // SDL_GPUTextureRegion normalRegion = SDL_GPUTextureRegion.init;
+        // normalRegion.texture = mNormal;
+        // normalRegion.w = bump_map.mWidth;
+        // normalRegion.h = bump_map.mHeight;
+        // normalRegion.x = 0;  
+        // normalRegion.y = 0;  
+        // normalRegion.z = 0;  
+        // normalRegion.d = 1;
+
+        // // Upload the texture
+        // SDL_UploadToGPUTexture(texCopyPass, &NormTransferInfo, &normalRegion, false);
 
         // End copy pass and submit
         SDL_EndGPUCopyPass(texCopyPass);
@@ -665,6 +751,11 @@ struct GraphicsApp{
 
         // Clean up the texture transfer buffer after upload
         SDL_ReleaseGPUTransferBuffer(mGPUDevice, mTexTransferBuffer);
+        //SDL_ReleaseGPUTransferBuffer(mGPUDevice, mNormTransferBuffer);
+
+        // Set up basic light
+        mLight = Light.init;
+        mLight.mAmbientIntensity = 1.0f;
     }
 
     ~this(){
@@ -767,6 +858,14 @@ struct GraphicsApp{
         cameraUniform.uProjection = mCamera.mProjectionMatrix;
         SDL_PushGPUVertexUniformData(commandBuffer, 0, &cameraUniform, cameraUniform.sizeof);
 
+        // add light information
+        import std.math;
+        static float inc = 0.0f;
+        float radius = 2.0f;
+        inc+=0.01;
+        mLight.mPosition = [mCamera.mEyePosition[0], mCamera.mEyePosition[1], mCamera.mEyePosition[2], 0.0f];
+        SDL_PushGPUFragmentUniformData(commandBuffer, 0, &mLight, mLight.sizeof);
+
         // draw something
         SDL_GPUCopyPass* copyPass = SDL_BeginGPUCopyPass(commandBuffer);
 
@@ -844,6 +943,11 @@ struct GraphicsApp{
         textureSamplerBinding.sampler = mSampler;
         SDL_BindGPUFragmentSamplers(renderPass, 0, &textureSamplerBinding, 1);
 
+        // Bind normal and sampler
+        //SDL_GPUTextureSamplerBinding normalSamplerBinding = SDL_GPUTextureSamplerBinding.init;
+        //normalSamplerBinding.texture = mNormal;
+        //normalSamplerBinding.sampler = mSamplerNormal;
+        //SDL_BindGPUFragmentSamplers(renderPass, 1, &normalSamplerBinding, 1);
 
         // bind the vertex buffer
         SDL_GPUBufferBinding[1] bufferBindings;
