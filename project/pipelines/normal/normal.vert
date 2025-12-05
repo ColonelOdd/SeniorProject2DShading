@@ -14,11 +14,13 @@ layout(std140, set = 1, binding = 0) uniform UniformBlock {
 layout(location=0) out vec2 v_texCoords;
 layout(location=1) out vec3 v_Normals;
 layout(location=2) out vec3 v_FragPos;
+layout(location=3) out vec3 v_ViewPos;
 
 void main()
 {
     v_texCoords = texCoords;
     v_FragPos = vec3(uModel * vec4(position,1.0));
+    v_ViewPos = vec3(uModel * uView * vec4(position,1.0));
     v_Normals = mat3(transpose(inverse(uModel))) * normals;
 
     vec4 finalPosition = uProjection * uView * uModel * vec4(position,1.0f);

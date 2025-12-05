@@ -9,6 +9,6 @@ void main(){
 	
 	//etc.
 	// Create graphics app!
-	GraphicsApp app = GraphicsApp(960,540, "assets/Norn/Norn2.obj");
+	GraphicsApp app = GraphicsApp(1920,1080, "assets/Horus/Horus.obj");
     app.Loop();
 }

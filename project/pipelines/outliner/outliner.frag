@@ -1,60 +1,72 @@
 #version 450 core
+layout(location=0) in vec2 v_texCoords;
 
-layout (location = 0) in vec2 v_texCoords;
+layout (set = 2, binding = 0) uniform sampler2D positionTexture;
+layout (set = 2, binding = 1) uniform sampler2D colorTexture;
+layout (set = 2, binding = 2) uniform sampler2D noiseTexture;
 
-layout(set = 2, binding=0) uniform sampler2D positionTexture; 
-layout(set = 2, binding=1) uniform sampler2D colorTexture; 
+layout (location = 0) out vec4 outColor;
 
-layout (location = 0) out vec4 color;
+void main() {
 
-void main()
-{
-	// Parameters for outline
-	float minSeparation = 1.0;
-	float maxSeparation = 3.0;
-	float minDistance   = 0.01;
-	float maxDistance   = 0.1;
-	int   size          = 1;
-	vec3 colorModifier  = vec3(0.324, 0.063, 0.099);
+    // ---- Tunable parameters ----
+    float minSeparation = 1.0;
+    float maxSeparation = 3.0;
+    float minDistance   = 0.01;
+    float maxDistance   = 0.05;
+    int   size          = 1;
+    vec3  colorModifier = vec3(0.324, 0.063, 0.099);
+    float noiseScale    = 10;
 
-	// Camera near / far, objectively should pass this in as a uniform from uProjection
-	float near = 0.1f;
-	float far = 1000.0f;
+    float near = 0.1;
+    float far  = 1000.0;
 
-	// Fragment position
-	vec2 texSize   = textureSize(colorTexture, 0).xy;
-	vec2 fragCoord = v_texCoords.xy;
+    // ---- Screen UV ----
+    vec2 texSize = textureSize(colorTexture, 0).xy;
+    vec2 fragCoord = gl_FragCoord.xy;
+    vec2 uv = fragCoord / texSize;
 
-	vec4 position = texture(positionTexture, v_texCoords);
-	vec4 texColor = texture(colorTexture, v_texCoords);
+    // ---- Noise ----
+    vec2 noise = texture(noiseTexture,
+                         fragCoord / textureSize(noiseTexture, 0).xy).rb;
 
-	// Fragment Depth
-	float depth = clamp(1.0 - ((far - position.y) / (far - near)), 0.0, 1.0);
+    noise = noise * 2.0 - 1.0;   // [-1, 1]
+    noise *= noiseScale;
 
-	float separation = mix(maxSeparation, minSeparation, depth);
+    // ---- Distorted sampling UV ----
+    vec2 noisyUV = (fragCoord - noise) / texSize;
 
-	float mx = 0.0;
-    
+    // ---- Base color ----
+    vec4 texColor = texture(colorTexture, uv);
+
+    // ---- Position (view-space!) ----
+    vec4 pos = texture(positionTexture, noisyUV);
+
+    // Depth from near->far
+    float depth = clamp(1.0 - ( (far - pos.z)  / (far - near)), 0.0, 1.0);
+
+    float separation = mix(maxSeparation, minSeparation, depth);
+
+    // ---- Edge detection ----
+    float mx = 0.0;
+
     for (int i = -size; i <= size; ++i) {
         for (int j = -size; j <= size; ++j) {
-            // Sample neighboring pixel
-            vec2 offset = vec2(i, j) * (separation / texSize);
-            vec2 sampleCoord = (fragCoord + offset);
-            
-            vec4 positionTemp = texture(positionTexture, sampleCoord);
-            
-            // Find maximum difference in Y position (depth)
-            mx = max(mx, abs(position.y - positionTemp.y));
+
+            vec2 uvTemp = (vec2(i,j) * separation + fragCoord + noise) / texSize;
+            vec4 posTemp = texture(positionTexture, uvTemp);
+
+
+            mx = max(mx, abs(pos.z - posTemp.z));
         }
     }
-    
-    // Convert difference to edge strength (0 = no edge, 1 = strong edge)
+
     float diff = smoothstep(minDistance, maxDistance, mx);
-    
-    // Create outline color by darkening the base color
+
+    // ---- Outline tint ----
     vec3 lineColor = texColor.rgb * colorModifier;
-    
-    // Mix between original color and outline color based on edge strength
-    color.rgb = mix(texColor.rgb, lineColor, diff);
-    color.a = 1.0;
+
+    outColor.rgb = mix(texColor.rgb, lineColor, diff);
+	//outColor= texture(colorTexture, v_texCoords);
+    outColor.a = 1.0;
 }

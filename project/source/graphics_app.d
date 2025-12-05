@@ -450,7 +450,7 @@ struct GraphicsApp{
         }
 
         // Create a camera
-		mCamera = new Camera();
+		mCamera = new Camera(width, height);
 
         // load the vertex shader code
         size_t vertexCodeSize; 
@@ -508,7 +508,7 @@ struct GraphicsApp{
         fragmentInfo.num_samplers = 1;
         fragmentInfo.num_storage_buffers = 0;
         fragmentInfo.num_storage_textures = 0;
-        fragmentInfo.num_uniform_buffers = 1;
+        fragmentInfo.num_uniform_buffers = 2;
 
         SDL_GPUShader* mFragShader = SDL_CreateGPUShader(mGPUDevice, &fragmentInfo);
         // debugging
@@ -734,9 +734,12 @@ struct GraphicsApp{
     SDL_GPUTexture* mColorTexture;
     SDL_GPUSampler* mPositionSampler;
     SDL_GPUSampler* mColorSampler;
+    SDL_GPUTexture* mNoiseTexture;
+    SDL_GPUSampler* mNoiseSampler;
 
     SDL_GPUBuffer* mQuadVertexBuffer;
     SDL_GPUBuffer* mQuadIndexBuffer;
+
 
     SDL_GPUGraphicsPipeline* mOutlinerPipeline;
     // creates an outline
@@ -774,6 +777,62 @@ struct GraphicsApp{
        
         mPositionSampler = SDL_CreateGPUSampler(mGPUDevice, &samplerInfo);
         mColorSampler = SDL_CreateGPUSampler(mGPUDevice, &samplerInfo);
+
+        // read in noise now
+        import std.string;
+        PPM surface = PPM.init;
+        surface.LoadPPMImage("assets/color-noise.ppm");
+        // Create texture data for noise
+        SDL_GPUTextureCreateInfo  textureInfo = SDL_GPUTextureCreateInfo(type : SDL_GPU_TEXTURETYPE_2D,
+            format : SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM,
+            width : surface.mWidth,
+            height : surface.mHeight,
+            layer_count_or_depth : 1,
+            num_levels : 1,
+            usage : SDL_GPU_TEXTUREUSAGE_SAMPLER);
+        mNoiseTexture = SDL_CreateGPUTexture(mGPUDevice, &textureInfo);
+        
+        // Upload texture data via transfer buffer
+        SDL_GPUTransferBufferCreateInfo texTransferInfo = SDL_GPUTransferBufferCreateInfo.init;
+        texTransferInfo.size = surface.mWidth * surface.mHeight * 4; // RGBA
+        texTransferInfo.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+        SDL_GPUTransferBuffer* mTexTransferBuffer  = SDL_CreateGPUTransferBuffer(mGPUDevice, &texTransferInfo);
+
+        // Copy surface data to transfer buffer
+        void* texData = SDL_MapGPUTransferBuffer(mGPUDevice, mTexTransferBuffer, false);
+        SDL_memcpy(texData, cast(void*) surface.mPixels, surface.mWidth * surface.mHeight * 4);
+        SDL_UnmapGPUTransferBuffer(mGPUDevice, mTexTransferBuffer);
+
+        // Create sampler 
+        mNoiseSampler = SDL_CreateGPUSampler(mGPUDevice, &samplerInfo);
+
+        // Get a command buffer to upload the texture
+        SDL_GPUCommandBuffer* commandBuffer = SDL_AcquireGPUCommandBuffer(mGPUDevice);
+        SDL_GPUCopyPass* texCopyPass = SDL_BeginGPUCopyPass(commandBuffer);
+
+        // Set up the texture upload
+        SDL_GPUTextureTransferInfo TexTransferInfo = SDL_GPUTextureTransferInfo.init;
+        TexTransferInfo.transfer_buffer = mTexTransferBuffer;
+        TexTransferInfo.offset = 0;
+        TexTransferInfo.pixels_per_row = surface.mWidth;  
+        TexTransferInfo.rows_per_layer = surface.mHeight; 
+
+        SDL_GPUTextureRegion textureRegion = SDL_GPUTextureRegion.init;
+        textureRegion.texture = mNoiseTexture;
+        textureRegion.w = surface.mWidth;
+        textureRegion.h = surface.mHeight;
+        textureRegion.x = 0;  
+        textureRegion.y = 0;  
+        textureRegion.z = 0;  
+        textureRegion.d = 1;
+
+        // Upload the texture
+        SDL_UploadToGPUTexture(texCopyPass, &TexTransferInfo, &textureRegion, false);
+
+        // End copy pass and submit
+        SDL_EndGPUCopyPass(texCopyPass);
+        SDL_SubmitGPUCommandBuffer(commandBuffer);
+        SDL_WaitForGPUIdle(mGPUDevice); 
 
         // PASS 2: Outliner, to the screen!
 
@@ -831,7 +890,7 @@ struct GraphicsApp{
         fragmentInfo.entrypoint = "main";
         fragmentInfo.format = SDL_GPU_SHADERFORMAT_SPIRV;
         fragmentInfo.stage = SDL_GPU_SHADERSTAGE_FRAGMENT;
-        fragmentInfo.num_samplers = 2;
+        fragmentInfo.num_samplers = 3;
         fragmentInfo.num_storage_buffers = 0;
         fragmentInfo.num_storage_textures = 0;
         fragmentInfo.num_uniform_buffers = 0;
@@ -1103,13 +1162,15 @@ struct GraphicsApp{
         cameraUniform.uProjection = mCamera.mProjectionMatrix;
         SDL_PushGPUVertexUniformData(commandBuffer, 0, &cameraUniform, cameraUniform.sizeof);
 
+        SDL_PushGPUVertexUniformData(commandBuffer, 1, &mCamera.mEyePosition, vec3.sizeof);
+
         // add light information
         import std.math;
         static float inc = 0.0f;
         float radius = 2.0f;
         inc+=0.01;
-        //mLight.mPosition = [mCamera.mEyePosition[0], mCamera.mEyePosition[1], mCamera.mEyePosition[2], 0.0f];
-        mLight.mPosition = [radius*cos(inc),0.0f,radius*sin(inc), 0.0f];
+        mLight.mPosition = [mCamera.mEyePosition[0], mCamera.mEyePosition[1], mCamera.mEyePosition[2], 0.0f];
+        //mLight.mPosition = [radius*cos(inc),0.0f,radius*sin(inc), 0.0f];
         SDL_PushGPUFragmentUniformData(commandBuffer, 0, &mLight, mLight.sizeof);
 
         // draw something
@@ -1230,12 +1291,14 @@ struct GraphicsApp{
         SDL_BindGPUGraphicsPipeline(renderPass, mOutlinerPipeline);
 
         // Bind position and color textures as samplers
-        SDL_GPUTextureSamplerBinding[2] textureSamplers;
+        SDL_GPUTextureSamplerBinding[3] textureSamplers;
         textureSamplers[0].texture = mPositionTexture;
         textureSamplers[0].sampler = mPositionSampler;
         textureSamplers[1].texture = mColorTexture;
         textureSamplers[1].sampler = mColorSampler;
-        SDL_BindGPUFragmentSamplers(renderPass, 0, textureSamplers.ptr, 2);
+        textureSamplers[2].texture = mNoiseTexture;
+        textureSamplers[2].sampler = mNoiseSampler;
+        SDL_BindGPUFragmentSamplers(renderPass, 0, textureSamplers.ptr, 3);
 
         // Bind quad buffers
         SDL_GPUBufferBinding quadVertexBinding;
