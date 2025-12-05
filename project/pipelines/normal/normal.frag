@@ -15,7 +15,8 @@ layout(std140, set = 3, binding = 0) uniform SrcLight {
 	float specularExponent;
 };
 
-layout (location = 0) out vec4 color;
+layout (location = 0) out vec4 positionOut;
+layout (location = 1) out vec4 colorOut;
 
 void main()
 {
@@ -34,5 +35,6 @@ void main()
     
     vec3 result = texColor.rgb * (ambient + diffuse);
 
-	color = vec4(result.rgb, 1.0);
+	colorOut = vec4(texColor.rgb, 1.0);
+	positionOut = vec4(v_FragPos, 1.0);
 }

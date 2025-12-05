@@ -588,7 +588,7 @@ struct GraphicsApp{
         pipelineInfo.vertex_input_state.vertex_attributes = vertexAttributes.ptr;
 
         // describe the color target
-        SDL_GPUColorTargetDescription[1] colorTargetDescriptions;
+        SDL_GPUColorTargetDescription[2] colorTargetDescriptions;
         colorTargetDescriptions[0] = SDL_GPUColorTargetDescription.init;
         colorTargetDescriptions[0].blend_state.enable_blend = false;
         colorTargetDescriptions[0].blend_state.color_blend_op = SDL_GPU_BLENDOP_ADD;
@@ -597,9 +597,21 @@ struct GraphicsApp{
         colorTargetDescriptions[0].blend_state.dst_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
         colorTargetDescriptions[0].blend_state.src_alpha_blendfactor = SDL_GPU_BLENDFACTOR_SRC_ALPHA;
         colorTargetDescriptions[0].blend_state.dst_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
-        colorTargetDescriptions[0].format = SDL_GetGPUSwapchainTextureFormat(mGPUDevice, mWindow);
+        colorTargetDescriptions[0].format = SDL_GPU_TEXTUREFORMAT_R32G32B32A32_FLOAT;
 
-        pipelineInfo.target_info.num_color_targets = 1;
+        colorTargetDescriptions[1] = SDL_GPUColorTargetDescription.init;
+        colorTargetDescriptions[1].blend_state.enable_blend = false;
+        colorTargetDescriptions[1].blend_state.color_blend_op = SDL_GPU_BLENDOP_ADD;
+        colorTargetDescriptions[1].blend_state.alpha_blend_op = SDL_GPU_BLENDOP_ADD;
+        colorTargetDescriptions[1].blend_state.src_color_blendfactor = SDL_GPU_BLENDFACTOR_SRC_ALPHA;
+        colorTargetDescriptions[1].blend_state.dst_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
+        colorTargetDescriptions[1].blend_state.src_alpha_blendfactor = SDL_GPU_BLENDFACTOR_SRC_ALPHA;
+        colorTargetDescriptions[1].blend_state.dst_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
+        colorTargetDescriptions[1].format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+
+
+
+        pipelineInfo.target_info.num_color_targets = 2;
         pipelineInfo.target_info.color_target_descriptions = colorTargetDescriptions.ptr;
 
         // Depth Buffer Addition
@@ -697,53 +709,6 @@ struct GraphicsApp{
         // Upload the texture
         SDL_UploadToGPUTexture(texCopyPass, &TexTransferInfo, &textureRegion, false);
 
-        // Norm Setup time
-        // PPM bump_map = PPM.init;
-        // bump_map.LoadPPMImage(m.norm_file_path);
-
-        // // Norm
-        // SDL_GPUTextureCreateInfo  normalInfo = SDL_GPUTextureCreateInfo(type : SDL_GPU_TEXTURETYPE_2D,
-        //     format : SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM,
-        //     width : bump_map.mWidth,
-        //     height : bump_map.mHeight,
-        //     layer_count_or_depth : 1,
-        //     num_levels : 1,
-        //     usage : SDL_GPU_TEXTUREUSAGE_SAMPLER);
-        // mNormal = SDL_CreateGPUTexture(mGPUDevice, &normalInfo);
-        
-        // // Upload texture data via transfer buffer
-        // SDL_GPUTransferBufferCreateInfo normTransferInfo = SDL_GPUTransferBufferCreateInfo.init;
-        // normTransferInfo.size = bump_map.mWidth * bump_map.mHeight * 4; // RGBA
-        // normTransferInfo.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
-        // SDL_GPUTransferBuffer* mNormTransferBuffer  = SDL_CreateGPUTransferBuffer(mGPUDevice, &normTransferInfo);
-
-        // // Copy surface data to transfer buffer
-        // void* normData = SDL_MapGPUTransferBuffer(mGPUDevice, mNormTransferBuffer, false);
-        // SDL_memcpy(normData, cast(void*) bump_map.mPixels, bump_map.mWidth * bump_map.mHeight * 4);
-        // SDL_UnmapGPUTransferBuffer(mGPUDevice, mNormTransferBuffer);
-
-        // // Create sampler 
-        // mSamplerNormal = SDL_CreateGPUSampler(mGPUDevice, &samplerInfo);
-
-        // // Set up the texture upload
-        // SDL_GPUTextureTransferInfo NormTransferInfo = SDL_GPUTextureTransferInfo.init;
-        // NormTransferInfo.transfer_buffer = mNormTransferBuffer;
-        // NormTransferInfo.offset = 0;
-        // NormTransferInfo.pixels_per_row = bump_map.mWidth;  
-        // NormTransferInfo.rows_per_layer = bump_map.mHeight; 
-
-        // SDL_GPUTextureRegion normalRegion = SDL_GPUTextureRegion.init;
-        // normalRegion.texture = mNormal;
-        // normalRegion.w = bump_map.mWidth;
-        // normalRegion.h = bump_map.mHeight;
-        // normalRegion.x = 0;  
-        // normalRegion.y = 0;  
-        // normalRegion.z = 0;  
-        // normalRegion.d = 1;
-
-        // // Upload the texture
-        // SDL_UploadToGPUTexture(texCopyPass, &NormTransferInfo, &normalRegion, false);
-
         // End copy pass and submit
         SDL_EndGPUCopyPass(texCopyPass);
         SDL_SubmitGPUCommandBuffer(commandBuffer);
@@ -760,6 +725,282 @@ struct GraphicsApp{
         // Set up basic light
         mLight = Light.init;
         mLight.mAmbientIntensity = 1.0f;
+
+        CreateOutliner();
+    }
+
+    // used in second render pass to add an outline
+    SDL_GPUTexture* mPositionTexture;
+    SDL_GPUTexture* mColorTexture;
+    SDL_GPUSampler* mPositionSampler;
+    SDL_GPUSampler* mColorSampler;
+
+    SDL_GPUBuffer* mQuadVertexBuffer;
+    SDL_GPUBuffer* mQuadIndexBuffer;
+
+    SDL_GPUGraphicsPipeline* mOutlinerPipeline;
+    // creates an outline
+    void CreateOutliner()
+    {   
+        // PASS 1: Textures of the scene
+
+        // Create position texture (stores fragment positions)
+        SDL_GPUTextureCreateInfo positionTexInfo = SDL_GPUTextureCreateInfo(type : SDL_GPU_TEXTURETYPE_2D,
+            format : SDL_GPU_TEXTUREFORMAT_R32G32B32A32_FLOAT,
+            width : mScreenWidth,
+            height : mScreenHeight,
+            layer_count_or_depth : 1,
+            num_levels : 1,
+            usage : SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER);
+        mPositionTexture = SDL_CreateGPUTexture(mGPUDevice, &positionTexInfo);
+
+        // Create color texture (stores lit scene colors) 
+        SDL_GPUTextureCreateInfo colorTexInfo = SDL_GPUTextureCreateInfo(type : SDL_GPU_TEXTURETYPE_2D,
+            format : SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM,
+            width : mScreenWidth,
+            height : mScreenHeight,
+            layer_count_or_depth : 1,
+            num_levels : 1,
+            usage : SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER);
+        mColorTexture = SDL_CreateGPUTexture(mGPUDevice, &colorTexInfo);
+
+        // Create samplers for these framebuffers
+        SDL_GPUSamplerCreateInfo samplerInfo = SDL_GPUSamplerCreateInfo(min_filter : SDL_GPU_FILTER_LINEAR,
+            mag_filter : SDL_GPU_FILTER_LINEAR,
+            mipmap_mode : SDL_GPU_SAMPLERMIPMAPMODE_LINEAR,
+            address_mode_u : SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
+            address_mode_v : SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
+            address_mode_w : SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE);
+       
+        mPositionSampler = SDL_CreateGPUSampler(mGPUDevice, &samplerInfo);
+        mColorSampler = SDL_CreateGPUSampler(mGPUDevice, &samplerInfo);
+
+        // PASS 2: Outliner, to the screen!
+
+        // PART 1: Create the shaders!
+        // load the vertex shader code
+        size_t vertexCodeSize; 
+        void* vertexCode = SDL_LoadFile("pipelines/outliner/vertex.spv", &vertexCodeSize);
+        //debugging
+        if (vertexCode == null)
+        {
+            writeln("ERROR: Failed to load vertex shader file!");
+            mGameIsRunning = SDL_APP_FAILURE;
+            return;
+        }
+
+        // create the vertex shader
+        SDL_GPUShaderCreateInfo vertexInfo;
+        vertexInfo.code = cast(uint8_t*) vertexCode;
+        vertexInfo.code_size = vertexCodeSize;
+        vertexInfo.entrypoint = "main";
+        vertexInfo.format = SDL_GPU_SHADERFORMAT_SPIRV;
+        vertexInfo.stage = SDL_GPU_SHADERSTAGE_VERTEX;
+        vertexInfo.num_samplers = 0;
+        vertexInfo.num_storage_buffers = 0;
+        vertexInfo.num_storage_textures = 0;
+        vertexInfo.num_uniform_buffers = 0;
+
+        SDL_GPUShader* mVertexShader = SDL_CreateGPUShader(mGPUDevice, &vertexInfo);
+
+        // debugging
+        if (mVertexShader == null)
+        {
+            writeln("ERROR: Failed to create vertex shader!");
+            mGameIsRunning = SDL_APP_FAILURE;
+            return;
+        }
+
+        // free the file
+        SDL_free(vertexCode);
+
+        // load the fragment shader code
+        size_t fragmentCodeSize; 
+        void* fragmentCode = SDL_LoadFile("pipelines/outliner/fragment.spv", &fragmentCodeSize);
+        if (fragmentCode == null)
+        {
+            writeln("ERROR: Failed to load frag shader file!");
+            mGameIsRunning = SDL_APP_FAILURE;
+            return;
+        }
+
+        // create the fragment shader
+        SDL_GPUShaderCreateInfo fragmentInfo;
+        fragmentInfo.code = cast(uint8_t*)fragmentCode;
+        fragmentInfo.code_size = fragmentCodeSize;
+        fragmentInfo.entrypoint = "main";
+        fragmentInfo.format = SDL_GPU_SHADERFORMAT_SPIRV;
+        fragmentInfo.stage = SDL_GPU_SHADERSTAGE_FRAGMENT;
+        fragmentInfo.num_samplers = 2;
+        fragmentInfo.num_storage_buffers = 0;
+        fragmentInfo.num_storage_textures = 0;
+        fragmentInfo.num_uniform_buffers = 0;
+
+        SDL_GPUShader* mFragShader = SDL_CreateGPUShader(mGPUDevice, &fragmentInfo);
+        // debugging
+        if (mFragShader == null)
+        {
+            writeln("ERROR: Failed to create frag shader!");
+            mGameIsRunning = SDL_APP_FAILURE;
+            return;
+        }
+
+        // free the file
+        SDL_free(fragmentCode);
+
+        /*
+         PART 2: Vertex/Index Buffers to draw the texture across the screen
+        */
+        float[] quadVertices = [
+            // positions        // texCoords
+            -1.0f,  1.0f, 0.0f,  0.0f, 1.0f,  // Top-left
+            -1.0f, -1.0f, 0.0f,  0.0f, 0.0f,  // Bottom-left
+            1.0f, -1.0f, 0.0f,  1.0f, 0.0f,  // Bottom-right
+            1.0f,  1.0f, 0.0f,  1.0f, 1.0f   // Top-right
+        ];
+
+        uint[] quadIndices = [
+            0, 1, 2,  // First triangle
+            0, 2, 3   // Second triangle
+        ];
+
+
+        // create the vertex buffer
+        SDL_GPUBufferCreateInfo vertexbufferInfo = SDL_GPUBufferCreateInfo.init;
+        vertexbufferInfo.size = cast(uint) (quadVertices.length * float.sizeof);
+        vertexbufferInfo.usage = SDL_GPU_BUFFERUSAGE_VERTEX;
+        mQuadVertexBuffer = SDL_CreateGPUBuffer(mGPUDevice, &vertexbufferInfo);
+
+        // create a transfer buffer to upload to the vertex buffer
+        SDL_GPUTransferBufferCreateInfo vertextransferInfo = SDL_GPUTransferBufferCreateInfo.init;
+        vertextransferInfo.size = cast(uint) (quadVertices.length * float.sizeof);
+        vertextransferInfo.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+        SDL_GPUTransferBuffer* mQuadTransferBuffer = SDL_CreateGPUTransferBuffer(mGPUDevice, &vertextransferInfo);
+
+        // fill the transfer buffer
+        void* quad_data = SDL_MapGPUTransferBuffer(mGPUDevice, mQuadTransferBuffer, false);
+        SDL_memcpy(quad_data, cast(void*)quadVertices, quadVertices.length * float.sizeof);
+
+        // unmap the pointer when you are done updating the transfer buffer
+        SDL_UnmapGPUTransferBuffer(mGPUDevice, mQuadTransferBuffer);
+
+        // upload to GPU
+        SDL_GPUCommandBuffer* uploadCmd = SDL_AcquireGPUCommandBuffer(mGPUDevice);
+        SDL_GPUCopyPass* copyPass = SDL_BeginGPUCopyPass(uploadCmd);
+        SDL_GPUTransferBufferLocation transferLoc;
+        transferLoc.transfer_buffer = mQuadTransferBuffer;
+        transferLoc.offset = 0;
+        SDL_GPUBufferRegion bufferRegion;
+        bufferRegion.buffer = mQuadVertexBuffer;
+        bufferRegion.offset = 0;
+        bufferRegion.size = cast(uint) (quadVertices.length * float.sizeof);
+        SDL_UploadToGPUBuffer(copyPass, &transferLoc, &bufferRegion, false);
+        SDL_EndGPUCopyPass(copyPass);
+        SDL_SubmitGPUCommandBuffer(uploadCmd);
+        SDL_WaitForGPUIdle(mGPUDevice);
+        SDL_ReleaseGPUTransferBuffer(mGPUDevice, mQuadTransferBuffer);
+
+        // create the index buffer
+        SDL_GPUBufferCreateInfo indexbufferInfo = SDL_GPUBufferCreateInfo.init;
+        indexbufferInfo.size = cast(uint) (quadIndices.length * uint.sizeof);
+        indexbufferInfo.usage = SDL_GPU_BUFFERUSAGE_INDEX;
+        mQuadIndexBuffer = SDL_CreateGPUBuffer(mGPUDevice, &indexbufferInfo);
+
+        // create a transfer buffer to upload to the index buffer
+        SDL_GPUTransferBufferCreateInfo indextransferInfo = SDL_GPUTransferBufferCreateInfo.init;
+        indextransferInfo.size = cast(uint) (quadIndices.length * uint.sizeof);
+        indextransferInfo.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+        SDL_GPUTransferBuffer* mQuadIndTransferBuffer = SDL_CreateGPUTransferBuffer(mGPUDevice, &indextransferInfo);
+
+        // fill the transfer buffer
+        void* index_data = SDL_MapGPUTransferBuffer(mGPUDevice, mQuadIndTransferBuffer, false);
+        SDL_memcpy(index_data, cast(void*)quadIndices, quadIndices.length * uint.sizeof);
+
+        // unmap the pointer when you are done updating the transfer buffer
+        SDL_UnmapGPUTransferBuffer(mGPUDevice, mQuadIndTransferBuffer);
+
+        // upload to GPU
+        uploadCmd = SDL_AcquireGPUCommandBuffer(mGPUDevice);
+        copyPass = SDL_BeginGPUCopyPass(uploadCmd);
+        transferLoc.transfer_buffer = mQuadIndTransferBuffer;
+        transferLoc.offset = 0;
+        bufferRegion.buffer = mQuadIndexBuffer;
+        bufferRegion.offset = 0;
+        bufferRegion.size = cast(uint) (quadIndices.length * uint.sizeof);
+        SDL_UploadToGPUBuffer(copyPass, &transferLoc, &bufferRegion, false);
+        SDL_EndGPUCopyPass(copyPass);
+        SDL_SubmitGPUCommandBuffer(uploadCmd);
+        SDL_WaitForGPUIdle(mGPUDevice);
+        SDL_ReleaseGPUTransferBuffer(mGPUDevice, mQuadIndTransferBuffer);
+
+        /*
+         PART 3: Create the pipeline
+        */
+        SDL_GPUGraphicsPipelineCreateInfo pipelineInfo = SDL_GPUGraphicsPipelineCreateInfo.init;
+
+        // bind shaders
+        pipelineInfo.vertex_shader = mVertexShader;
+        pipelineInfo.fragment_shader = mFragShader;
+        // draw triangles
+        pipelineInfo.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
+
+        // describe the vertex buffers
+        SDL_GPUVertexBufferDescription[1] vertexBufferDesctiptions;
+        vertexBufferDesctiptions[0] = SDL_GPUVertexBufferDescription.init;
+        vertexBufferDesctiptions[0].slot = 0;
+        vertexBufferDesctiptions[0].input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX;
+        vertexBufferDesctiptions[0].instance_step_rate = 0;
+        vertexBufferDesctiptions[0].pitch = 5 * float.sizeof;
+
+        pipelineInfo.vertex_input_state.num_vertex_buffers = 1;
+        pipelineInfo.vertex_input_state.vertex_buffer_descriptions = vertexBufferDesctiptions.ptr;
+
+        // describe the vertex attribute
+        SDL_GPUVertexAttribute[2] vertexAttributes;
+
+        // a_position
+        vertexAttributes[0] = SDL_GPUVertexAttribute.init;
+        vertexAttributes[0].buffer_slot = 0; // fetch data from the buffer at slot 0
+        vertexAttributes[0].location = 0; // layout (location = 0) in shader
+        vertexAttributes[0].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3; //vec3
+        vertexAttributes[0].offset = 0; // start from the first byte from current buffer position
+
+        // a_color
+        vertexAttributes[1] = SDL_GPUVertexAttribute.init;
+        vertexAttributes[1].buffer_slot = 0; // use buffer at slot 0
+        vertexAttributes[1].location = 1; // layout (location = 1) in shader
+        vertexAttributes[1].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2; //vec2
+        vertexAttributes[1].offset = float.sizeof * 3; // 4th float from current buffer position
+
+        pipelineInfo.vertex_input_state.num_vertex_attributes = 2;
+        pipelineInfo.vertex_input_state.vertex_attributes = vertexAttributes.ptr;
+
+        // describe the color target
+        SDL_GPUColorTargetDescription[1] colorTargetDescriptions;
+        colorTargetDescriptions[0] = SDL_GPUColorTargetDescription.init;
+        colorTargetDescriptions[0].blend_state.enable_blend = false;
+        colorTargetDescriptions[0].blend_state.color_blend_op = SDL_GPU_BLENDOP_ADD;
+        colorTargetDescriptions[0].blend_state.alpha_blend_op = SDL_GPU_BLENDOP_ADD;
+        colorTargetDescriptions[0].blend_state.src_color_blendfactor = SDL_GPU_BLENDFACTOR_SRC_ALPHA;
+        colorTargetDescriptions[0].blend_state.dst_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
+        colorTargetDescriptions[0].blend_state.src_alpha_blendfactor = SDL_GPU_BLENDFACTOR_SRC_ALPHA;
+        colorTargetDescriptions[0].blend_state.dst_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
+        colorTargetDescriptions[0].format = SDL_GetGPUSwapchainTextureFormat(mGPUDevice, mWindow);
+
+        pipelineInfo.target_info.num_color_targets = 1;
+        pipelineInfo.target_info.color_target_descriptions = colorTargetDescriptions.ptr;
+
+        // No depth buffer this time
+        pipelineInfo.target_info.has_depth_stencil_target = false;
+        pipelineInfo.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
+        pipelineInfo.rasterizer_state.front_face = SDL_GPU_FRONTFACE_CLOCKWISE;
+        pipelineInfo.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_NONE;
+
+        mOutlinerPipeline = SDL_CreateGPUGraphicsPipeline(mGPUDevice, &pipelineInfo);
+
+        // Free the shaders
+        SDL_ReleaseGPUShader(mGPUDevice, mVertexShader);
+        SDL_ReleaseGPUShader(mGPUDevice, mFragShader);
     }
 
     ~this(){
@@ -919,11 +1160,23 @@ struct GraphicsApp{
         }
         
         // Create the color target
-        SDL_GPUColorTargetInfo colorTargetInfo = SDL_GPUColorTargetInfo.init;
-        colorTargetInfo.clear_color = SDL_FColor(r: 245/255.0f, g: 135/255.0f, b: 66/255.0f, a: 255/255.0f);
-        colorTargetInfo.load_op = SDL_GPU_LOADOP_CLEAR;
-        colorTargetInfo.store_op = SDL_GPU_STOREOP_STORE;
-        colorTargetInfo.texture = swapchainTexture;
+        SDL_GPUColorTargetInfo[2] colorTargetInfo;
+
+        // holding position info first
+        colorTargetInfo[0] = SDL_GPUColorTargetInfo.init;
+        colorTargetInfo[0].clear_color = SDL_FColor(r: 0.0f, g: 0.0f, b: 0.0f, a: 0.0f);
+        colorTargetInfo[0].load_op = SDL_GPU_LOADOP_CLEAR;
+        colorTargetInfo[0].store_op = SDL_GPU_STOREOP_STORE;
+        colorTargetInfo[0].texture = mPositionTexture;
+        colorTargetInfo[0].cycle = false;
+        
+        // then color info
+        colorTargetInfo[1] = SDL_GPUColorTargetInfo.init;
+        colorTargetInfo[1].clear_color = SDL_FColor(r: 147/255.0f, g: 202/255.0f, b: 237/255.0f, a: 255/255.0f);
+        colorTargetInfo[1].load_op = SDL_GPU_LOADOP_CLEAR;
+        colorTargetInfo[1].store_op = SDL_GPU_STOREOP_STORE;
+        colorTargetInfo[1].texture = mColorTexture;
+        colorTargetInfo[1].cycle = false;
         
         // Depth buffer
         SDL_GPUDepthStencilTargetInfo depthStencilTargetInfo = SDL_GPUDepthStencilTargetInfo.init;
@@ -936,23 +1189,19 @@ struct GraphicsApp{
         depthStencilTargetInfo.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
         depthStencilTargetInfo.cycle = true;
 
-        // begin a render pass
-        SDL_GPURenderPass* renderPass = SDL_BeginGPURenderPass(commandBuffer, &colorTargetInfo, 1, &depthStencilTargetInfo);
+        // PASS 1: Scene
+
+        // begin a render pass to capture the scene
+        SDL_GPURenderPass* scenePass = SDL_BeginGPURenderPass(commandBuffer, colorTargetInfo.ptr, 2, &depthStencilTargetInfo);
 
         // bind the graphics pipeline
-        SDL_BindGPUGraphicsPipeline(renderPass, mGraphicsPipeline);
+        SDL_BindGPUGraphicsPipeline(scenePass, mGraphicsPipeline);
 
         // Bind texture and sampler
         SDL_GPUTextureSamplerBinding textureSamplerBinding = SDL_GPUTextureSamplerBinding.init;
         textureSamplerBinding.texture = mTexture;
         textureSamplerBinding.sampler = mSampler;
-        SDL_BindGPUFragmentSamplers(renderPass, 0, &textureSamplerBinding, 1);
-
-        // Bind normal and sampler
-        //SDL_GPUTextureSamplerBinding normalSamplerBinding = SDL_GPUTextureSamplerBinding.init;
-        //normalSamplerBinding.texture = mNormal;
-        //normalSamplerBinding.sampler = mSamplerNormal;
-        //SDL_BindGPUFragmentSamplers(renderPass, 1, &normalSamplerBinding, 1);
+        SDL_BindGPUFragmentSamplers(scenePass, 0, &textureSamplerBinding, 1);
 
         // bind the vertex buffer
         SDL_GPUBufferBinding[1] bufferBindings;
@@ -960,12 +1209,48 @@ struct GraphicsApp{
         bufferBindings[0].buffer = mVertexBuffer; // index 0 is slot 0 in this example
         bufferBindings[0].offset = 0; // start from the first byte
 
-        SDL_BindGPUVertexBuffers(renderPass, 0, bufferBindings.ptr, 1); // bind one buffer starting from slot 0
+        SDL_BindGPUVertexBuffers(scenePass, 0, bufferBindings.ptr, 1); // bind one buffer starting from slot 0
         
         // issue a draw call
-        SDL_DrawGPUPrimitives(renderPass, cast(uint) vertices.length, 1, 0, 0);
+        SDL_DrawGPUPrimitives(scenePass, cast(uint) vertices.length, 1, 0, 0);
         
-        // end the render pass
+        // end the initial scene pass
+        SDL_EndGPURenderPass(scenePass);
+
+        // PASS 2 : Outliner!
+        SDL_GPUColorTargetInfo screenTarget = SDL_GPUColorTargetInfo.init;
+        screenTarget.clear_color = SDL_FColor(r: 245/255.0f, g: 135/255.0f, b: 66/255.0f, a: 255/255.0f);
+        screenTarget.load_op = SDL_GPU_LOADOP_CLEAR;
+        screenTarget.store_op = SDL_GPU_STOREOP_STORE;
+        screenTarget.texture = swapchainTexture;
+
+        // begin a render pass to do outlining
+        SDL_GPURenderPass* renderPass = SDL_BeginGPURenderPass(commandBuffer, &screenTarget, 1, null);
+
+        SDL_BindGPUGraphicsPipeline(renderPass, mOutlinerPipeline);
+
+        // Bind position and color textures as samplers
+        SDL_GPUTextureSamplerBinding[2] textureSamplers;
+        textureSamplers[0].texture = mPositionTexture;
+        textureSamplers[0].sampler = mPositionSampler;
+        textureSamplers[1].texture = mColorTexture;
+        textureSamplers[1].sampler = mColorSampler;
+        SDL_BindGPUFragmentSamplers(renderPass, 0, textureSamplers.ptr, 2);
+
+        // Bind quad buffers
+        SDL_GPUBufferBinding quadVertexBinding;
+        quadVertexBinding.buffer = mQuadVertexBuffer;
+        quadVertexBinding.offset = 0;
+        SDL_BindGPUVertexBuffers(renderPass, 0, &quadVertexBinding, 1);
+
+        SDL_GPUBufferBinding quadIndexBinding;
+        quadIndexBinding.buffer = mQuadIndexBuffer;
+        quadIndexBinding.offset = 0;
+        SDL_BindGPUIndexBuffer(renderPass, &quadIndexBinding, SDL_GPU_INDEXELEMENTSIZE_32BIT);
+
+        SDL_DrawGPUIndexedPrimitives(renderPass, 6, 1, 0, 0, 0);
+
+        // end the initial scene pass
         SDL_EndGPURenderPass(renderPass);
 
         // submit the command buffer
@@ -987,3 +1272,60 @@ struct GraphicsApp{
         }
     }
 }
+
+// ununused code to note pollute graphics app
+// Norm Setup time
+        // PPM bump_map = PPM.init;
+        // bump_map.LoadPPMImage(m.norm_file_path);
+
+        // // Norm
+        // SDL_GPUTextureCreateInfo  normalInfo = SDL_GPUTextureCreateInfo(type : SDL_GPU_TEXTURETYPE_2D,
+        //     format : SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM,
+        //     width : bump_map.mWidth,
+        //     height : bump_map.mHeight,
+        //     layer_count_or_depth : 1,
+        //     num_levels : 1,
+        //     usage : SDL_GPU_TEXTUREUSAGE_SAMPLER);
+        // mNormal = SDL_CreateGPUTexture(mGPUDevice, &normalInfo);
+        
+        // // Upload texture data via transfer buffer
+        // SDL_GPUTransferBufferCreateInfo normTransferInfo = SDL_GPUTransferBufferCreateInfo.init;
+        // normTransferInfo.size = bump_map.mWidth * bump_map.mHeight * 4; // RGBA
+        // normTransferInfo.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+        // SDL_GPUTransferBuffer* mNormTransferBuffer  = SDL_CreateGPUTransferBuffer(mGPUDevice, &normTransferInfo);
+
+        // // Copy surface data to transfer buffer
+        // void* normData = SDL_MapGPUTransferBuffer(mGPUDevice, mNormTransferBuffer, false);
+        // SDL_memcpy(normData, cast(void*) bump_map.mPixels, bump_map.mWidth * bump_map.mHeight * 4);
+        // SDL_UnmapGPUTransferBuffer(mGPUDevice, mNormTransferBuffer);
+
+        // // Create sampler 
+        // mSamplerNormal = SDL_CreateGPUSampler(mGPUDevice, &samplerInfo);
+
+        // // Set up the texture upload
+        // SDL_GPUTextureTransferInfo NormTransferInfo = SDL_GPUTextureTransferInfo.init;
+        // NormTransferInfo.transfer_buffer = mNormTransferBuffer;
+        // NormTransferInfo.offset = 0;
+        // NormTransferInfo.pixels_per_row = bump_map.mWidth;  
+        // NormTransferInfo.rows_per_layer = bump_map.mHeight; 
+
+        // SDL_GPUTextureRegion normalRegion = SDL_GPUTextureRegion.init;
+        // normalRegion.texture = mNormal;
+        // normalRegion.w = bump_map.mWidth;
+        // normalRegion.h = bump_map.mHeight;
+        // normalRegion.x = 0;  
+        // normalRegion.y = 0;  
+        // normalRegion.z = 0;  
+        // normalRegion.d = 1;
+
+        // // Upload the texture
+        // SDL_UploadToGPUTexture(texCopyPass, &NormTransferInfo, &normalRegion, false);
+
+
+// in render
+
+// Bind normal and sampler
+        //SDL_GPUTextureSamplerBinding normalSamplerBinding = SDL_GPUTextureSamplerBinding.init;
+        //normalSamplerBinding.texture = mNormal;
+        //normalSamplerBinding.sampler = mSamplerNormal;
+        //SDL_BindGPUFragmentSamplers(renderPass, 1, &normalSamplerBinding, 1);
