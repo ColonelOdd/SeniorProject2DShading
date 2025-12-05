@@ -22,9 +22,13 @@ void main()
         return;
     }
 
+	SDL_DisplayID di = SDL_GetPrimaryDisplay();
+	const SDL_DisplayMode* dm = SDL_GetCurrentDisplayMode(di);
+	int screenWidth  = dm.w;
+	int screenHeight = dm.h;
     // Create launcher window
     SDL_Window* window = SDL_CreateWindow("Model Launcher - Select a Model",
-        1920, 1080, SDL_WINDOWPOS_CENTERED || SDL_WINDOWPOS_CENTERED|| SDL_WINDOW_RESIZABLE);
+        screenWidth, screenHeight, SDL_WINDOWPOS_CENTERED || SDL_WINDOWPOS_CENTERED|| SDL_WINDOW_RESIZABLE);
 
     if (window == null)
     {
@@ -44,11 +48,11 @@ void main()
     }
 
     // Define the three model buttons
-	int buttonWidth = 800;
-	int buttonHeight = 200;
-	int spacing = 50;
+	int buttonWidth = screenWidth / 2;
+	int buttonHeight = screenHeight / 5;
+	int spacing = screenHeight / 12;
 
-	int startX = (1920 - buttonWidth) / 2;
+	int startX = (screenWidth - buttonWidth) / 2;
 	int startY = 150;
 
     ModelButton[3] buttons = [
@@ -127,7 +131,7 @@ void main()
                             writeln("Launching: ", button.label);
                             
                             // Launch the graphics app with selected model
-                            GraphicsApp app = GraphicsApp(1920, 1080, button.modelPath);
+                            GraphicsApp app = GraphicsApp(screenWidth, screenHeight, button.modelPath);
                             app.Loop();
                         }
                     }
@@ -138,18 +142,18 @@ void main()
                 // Allow keyboard shortcuts
                 if (event.key.scancode == SDL_SCANCODE_1)
                 {
-                    GraphicsApp app = GraphicsApp(1920, 1080, buttons[0].modelPath);
+                    GraphicsApp app = GraphicsApp(screenWidth, screenHeight, buttons[0].modelPath);
                     app.Loop();
                 }
                 else if (event.key.scancode == SDL_SCANCODE_2)
                 {
-                    GraphicsApp app = GraphicsApp(1920, 1080, buttons[1].modelPath);
+                    GraphicsApp app = GraphicsApp(screenWidth, screenHeight, buttons[1].modelPath);
                     app.Loop();
 					
                 }
                 else if (event.key.scancode == SDL_SCANCODE_3)
                 {
-                    GraphicsApp app = GraphicsApp(1920, 1080, buttons[2].modelPath);
+                    GraphicsApp app = GraphicsApp(screenWidth, screenHeight, buttons[2].modelPath);
                     app.Loop();
                 }
                 else if (event.key.scancode == SDL_SCANCODE_ESCAPE)
@@ -187,7 +191,7 @@ void main()
 
         // Draw title text (simplified - just a rectangle at top)
         SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-        SDL_FRect titleRect = SDL_FRect(x: (1920 - 400) / 2.0, y: 50, w: 400, h: 50);
+        SDL_FRect titleRect = SDL_FRect(x: (screenWidth - 400) / 2.0, y: 50, w: 400, h: 50);
         SDL_RenderRect(renderer, &titleRect);
 
         SDL_RenderPresent(renderer);

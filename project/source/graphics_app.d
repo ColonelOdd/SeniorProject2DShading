@@ -437,7 +437,7 @@ struct GraphicsApp{
         //vertices = LoadSTLFile(file_string).points;
 
         // Create an application window using SDL
-        mWindow = SDL_CreateWindow("Senior Project", mScreenWidth, mScreenHeight, SDL_WINDOW_RESIZABLE);
+        mWindow = SDL_CreateWindow("Senior Project", mScreenWidth, mScreenHeight,SDL_WINDOW_RESIZABLE);
 
         // GPU device
         mGPUDevice = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV, false, null);

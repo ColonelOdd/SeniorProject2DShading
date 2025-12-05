@@ -39,8 +39,6 @@ void main()
 	else if (diff >= 0.6) { diff = 0.6; }
 	else if (diff >= 0.3) { diff = 0.3; }
 	else                  { diff = 0.0; }
-	float cellLevels = 2.0;
-	diff = floor(diff * cellLevels) / cellLevels;
 	vec3 diffuse = diff * lightColor.rgb;
 
 	// specular 
