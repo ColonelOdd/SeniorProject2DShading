@@ -34,13 +34,6 @@ void main()
 	// diffuse
     vec3 lightDir = normalize(lightPosition.xyz - v_FragPos);
     float diff = max(dot(normal, lightDir), 0.0);
-	diff = step(0.1, diff);
-	if      (diff >= 0.8) { diff = 1.0; }
-	else if (diff >= 0.6) { diff = 0.6; }
-	else if (diff >= 0.3) { diff = 0.3; }
-	else                  { diff = 0.0; }
-	float cellLevels = 2.0;
-	diff = floor(diff * cellLevels) / cellLevels;
 	vec3 diffuse = diff * lightColor.rgb;
 
 	// specular 
@@ -48,18 +41,9 @@ void main()
 	vec3 reflectDir = reflect(-lightDir, normal);  
 
 	float spec = pow(max(dot(viewDir, reflectDir), 0.0), specularExponent);
-	float specularIntensity2 = smoothstep(0.9, 1.0, specularIntensity);
-	vec3 specular = specularIntensity2 * spec * lightColor.rgb;
+	vec3 specular = specularIntensity * spec * lightColor.rgb;
 
-	vec3 eye_normal = normalize(-v_ViewPos.xyz);
-	float rimLightIntensity = dot(eye_normal, normal);
-    rimLightIntensity = 1.0 - rimLightIntensity;
-	rimLightIntensity = max(0.0, rimLightIntensity);
-    float rimPower = 2.0;
-    rimLightIntensity = pow(rimLightIntensity, rimPower);
-    vec3 rimLight = rimLightIntensity * lightColor.rgb;
-    
-    vec3 result = texColor.rgb * (ambient + diffuse + specular + rimLight);
+    vec3 result = texColor.rgb * (ambient + diffuse + specular);
 
 	colorOut = vec4(result, 1.0);
 	positionOut = vec4(v_ViewPos, 1.0);
