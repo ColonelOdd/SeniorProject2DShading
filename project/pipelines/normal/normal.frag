@@ -28,11 +28,11 @@ void main()
 	// diffuse
     vec3 lightDir = normalize(lightPosition.xyz - v_FragPos);
     float diff = max(dot(normal, lightDir), 0.0);
-	float cellLevels = 3.0;
+	float cellLevels = 2.0;
 	diff = floor(diff * cellLevels) / cellLevels;
 	vec3 diffuse = diff * lightColor.rgb;
     
     vec3 result = texColor.rgb * (ambient + diffuse);
 
-	color = vec4(result, 1.0);
+	color = vec4(result.rgb, 1.0);
 }

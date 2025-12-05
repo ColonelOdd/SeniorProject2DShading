@@ -19,11 +19,14 @@ class Camera{
     this(){
         // Setup our camera (view matrix) 
         mViewMatrix = MatrixMakeIdentity();
+        
         mModelMatrix = MatrixMakeIdentity();
+        // flip
+        mModelMatrix[0] = -1.0f;
 
         // Setup our perspective projection matrix
         // NOTE: Assumption made here is our window is always 640/480 or the similar aspect ratio.
-        mProjectionMatrix = MatrixMakePerspective(90.0f.ToRadians,480.0f/640.0f, 0.1f, 1000.0f);
+        mProjectionMatrix = MatrixMakePerspective(90.0f.ToRadians,960.0f/540.0f, 0.1f, 1000.0f);
 
         /// Initial Camera setup
         mEyePosition    = vec3(0.0f, 0.0f, 0.0f);
@@ -110,7 +113,7 @@ class Camera{
         UpdateViewMatrix();
         // TODO 
 		vec3 direction = mForwardVector;
-		direction = direction * 1.0f;		
+		direction = direction * 0.5f;		
 
         SetCameraPosition(mEyePosition.x - direction.x, 
 														mEyePosition.y - direction.y,
@@ -121,7 +124,7 @@ class Camera{
         UpdateViewMatrix();
         // TODO 
 		vec3 direction = mForwardVector;
-		direction = direction * 1.0f;		
+		direction = direction * 0.5f;		
 
         SetCameraPosition(mEyePosition.x + direction.x, 
 												  mEyePosition.y + direction.y,
@@ -150,7 +153,7 @@ class Camera{
         UpdateViewMatrix();
         // TODO 
         SetCameraPosition(mEyePosition.x, 
-					     						 mEyePosition.y +1.0f,
+					     						 mEyePosition.y +0.5f,
 						  						 mEyePosition.z);
     }
 
@@ -158,7 +161,7 @@ class Camera{
         UpdateViewMatrix();
         // TODO 
         SetCameraPosition(mEyePosition.x, 
-					     						 mEyePosition.y - 1.0f,
+					     						 mEyePosition.y - 0.5f,
 						  						 mEyePosition.z);
 
     }

@@ -157,7 +157,10 @@ Mesh MakeOBJ(string filepath){
     }
     Mesh m;
     // Geometry Data
-    writeln("Vertex indices: ", mTextureData.length);
+    
+    writeln("Vertices counted: ", mVertexData.length);
+    writeln("VTs counted: ", mTextureData.length);
+    writeln("VNs counted: ", mNormalData.length);
     writeln("Vertex indices: ", mIndexData.length);
     writeln("Texture indices: ", mIndexTextureData.length);  
     writeln("Normal indices: ", mIndexNormalData.length);
@@ -168,7 +171,7 @@ Mesh MakeOBJ(string filepath){
         uint textureindex = mIndexTextureData[i];
         uint normalindex = mIndexNormalData[i]; 
         mMultiVertex ~= Vertex(x: mVertexData[index * 3], y: mVertexData[index * 3 + 1], z: mVertexData[index * 3 + 2], 
-                        u: mTextureData[textureindex * 2], v: mTextureData[textureindex * 2 + 1], 
+                        u: mTextureData[textureindex * 2], v: 1.0f - mTextureData[textureindex * 2 + 1], 
                         nx: mNormalData[normalindex * 3], ny: mNormalData[normalindex * 3 + 1], nz: mNormalData[normalindex * 3 + 2]);
     }
 
@@ -299,14 +302,15 @@ struct PPM{
 
                 // Flip the image pixels from image space to screen space
 				//				result = result.reverse;
-				mPixels = mPixels.reverse;
+				//mPixels = mPixels.reverse;
 				// Swizzle the bytes back to RGB order	
-				for(int i = 0; i < mPixels.length; i+=3){
-					//rgb.reverse;
-					auto temp = mPixels[i];
-					mPixels[i] = mPixels[i+2];
-					mPixels[i+2] = temp; 
-				}
+				// for(int i = 0; i < mPixels.length; i+=3){
+				// 	//rgb.reverse;
+				// 	auto temp = mPixels[i];
+				// 	mPixels[i] = mPixels[i+2];
+				// 	mPixels[i+2] = temp; 
+				// }
+                
                 
                 // NOW convert to RGBA
                 ubyte[] rgbaPixels = new ubyte[mWidth * mHeight * 4];
@@ -863,7 +867,8 @@ struct GraphicsApp{
         static float inc = 0.0f;
         float radius = 2.0f;
         inc+=0.01;
-        mLight.mPosition = [mCamera.mEyePosition[0], mCamera.mEyePosition[1], mCamera.mEyePosition[2], 0.0f];
+        //mLight.mPosition = [mCamera.mEyePosition[0], mCamera.mEyePosition[1], mCamera.mEyePosition[2], 0.0f];
+        mLight.mPosition = [radius*cos(inc),0.0f,radius*sin(inc), 0.0f];
         SDL_PushGPUFragmentUniformData(commandBuffer, 0, &mLight, mLight.sizeof);
 
         // draw something
