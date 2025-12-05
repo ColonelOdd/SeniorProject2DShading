@@ -397,6 +397,7 @@ struct GraphicsApp{
 
     // Light
     Light mLight;
+    int lightchange = 0;
 
     // Depth Texture info
     SDL_GPUTexture* depthTexture = null;
@@ -1079,6 +1080,18 @@ struct GraphicsApp{
                     writeln("Swapped graphics pipeline");
                     cel = 1 - cel;
                 }
+                else if(event.key.scancode == SDL_SCANCODE_B){
+                    writeln("Blue light");
+                    mLight.mColor=[173.0f / 255.0f, 216.0f / 255.0f, 230.0f / 255.0f, 0.0];
+                }
+                else if(event.key.scancode == SDL_SCANCODE_W){
+                    writeln("White light");
+                    mLight.mColor=[1.0,1.0,1.0, 0.0];
+                }
+                else if(event.key.scancode == SDL_SCANCODE_L)
+                {
+                    lightchange = 1 - lightchange;
+                }
                 else if(event.key.scancode == SDL_SCANCODE_SPACE){
                     writeln("|| DEBUGGING... ||");
                     writeln("Eye");
@@ -1126,9 +1139,15 @@ struct GraphicsApp{
         import std.math;
         static float inc = 0.0f;
         float radius = 2.0f;
-        inc+=0.01;
-        mLight.mPosition = [mCamera.mEyePosition[0], mCamera.mEyePosition[1], mCamera.mEyePosition[2], 0.0f];
-        //mLight.mPosition = [radius*cos(inc),0.0f,radius*sin(inc), 0.0f];
+        if (!lightchange)
+        {
+            mLight.mPosition = [mCamera.mEyePosition[0], mCamera.mEyePosition[1], mCamera.mEyePosition[2], 0.0f];
+        }
+        else
+        {
+            inc+=0.01;
+            mLight.mPosition = [radius*cos(inc),0.0f,radius*sin(inc), 0.0f];
+        }
         SDL_PushGPUFragmentUniformData(commandBuffer, 0, &mLight, mLight.sizeof);
 
         // draw something
